@@ -1,10 +1,11 @@
-import pandas as pd
-import geopandas as gpd
-from shapely.geometry import LineString, Point, Polygon
-import shapely.affinity
-import numpy as np
 import logging
 import os
+
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+import shapely.affinity
+from shapely.geometry import LineString, Point, Polygon
 
 # Logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -60,6 +61,8 @@ def read_sosi(filepath, return_metadata=False):
     sosi_data_list = []
     all_attributes_list = []
     scale_factors = []
+    origo_ns = []
+    origo_es = []
     sosi_indexes = {}
     header_metadatas = []
 
@@ -70,6 +73,8 @@ def read_sosi(filepath, return_metadata=False):
         scale_factors.append(result['enhet_scale'])
         sosi_indexes[idx] = result['sosi_index']
         header_metadatas.append(result['header_metadata'])
+        origo_ns.append(result['origo_n'])
+        origo_es.append(result['origo_e'])
 
     # Konverter til GeoDataFrame
     gdf, extent = _sosi_to_geodataframe(
@@ -77,6 +82,8 @@ def read_sosi(filepath, return_metadata=False):
         all_attributes_list,
         scale_factors,
         header_metadatas=header_metadatas,
+        origo_ns=origo_ns,
+        origo_es=origo_es,
     )
 
     if return_metadata:
@@ -165,6 +172,7 @@ def _read_sosi_file(filepath):
     all_attributes = set()  # Collect all attribute names
     current_object = []  # Temporary storage for current object's raw lines
     object_id = 0  # Unique ID per object
+    origo_n, origo_e = None, None
 
     # Working variables for geometry/attribute handling
     kurve_coordinates = {}  
@@ -250,7 +258,7 @@ def _read_sosi_file(filepath):
                     continue
 
                 # End header section if we hit a geometric object or end of file
-                if stripped_line.startswith(('.KURVE', '.PUNKT', '.FLATE', '.SLUTT')):
+                if stripped_line.startswith(('.LINJE', '.KURVE', '.PUNKT', '.FLATE', '.SLUTT')):
                     #logger.debug("Exiting header section")
                     in_header = False
                     # Continue with geometric object processing
@@ -295,6 +303,9 @@ def _read_sosi_file(filepath):
                                     else:
                                         parsed_data['geometry'].append(Point(uniform_coordinates[0]))
                                         parsed_data['attributes'].append(current_attributes)
+                                elif geom_type == '.LINJE':
+                                    parsed_data['geometry'].append(LineString(uniform_coordinates))
+                                    parsed_data['attributes'].append(current_attributes)
 
                             sosi_index[object_id] = current_object
                             object_id += 1
@@ -336,7 +347,8 @@ def _read_sosi_file(filepath):
                             elif attr_name == 'KOORDSYS':
                                 header_metadata['KOORDSYS'] = attr_value
                             elif attr_name == 'ORIGO-NØ':
-                                header_metadata['ORIGO-NØ'] = attr_value
+                                origo_n, origo_e = map(float, attr_value.split())
+                                header_metadata['ORIGO-NØ'] = (origo_n, origo_e)
                         elif current_section == '..OMRÅDE':
                             if attr_name == 'MIN-NØ':
                                 min_n, min_e = map(float, attr_value.split())
@@ -430,6 +442,8 @@ def _read_sosi_file(filepath):
         'data': parsed_data,
         'all_attributes': all_attributes,
         'enhet_scale': enhet_scale,
+        'origo_n': origo_n,
+        'origo_e': origo_e,
         'sosi_index': sosi_index,
         'extent': (min_n, min_e, max_n, max_e),
         'header_metadata': header_metadata
@@ -447,6 +461,7 @@ def _convert_to_2d_if_mixed(coordinates, dimension):
     Returns:
         list: 2D coordinates (x, y) when mixing occurs; otherwise 3D (x, y, z) if present.
     """
+
     has_2d = any(len(coord) == 2 for coord in coordinates)
     if has_2d:
         # Keep as (East, North)
@@ -497,11 +512,12 @@ def _koordsys_to_epsg(koordsys):
         22: 25832,
         23: 25833,
         25: 25835,
+        "210": 5110,
     }
     return mapping.get(koordsys)
 
 
-def _sosi_to_geodataframe(sosi_data_list, all_attributes_list, scale_factors, header_metadatas=None):
+def _sosi_to_geodataframe(sosi_data_list, all_attributes_list, scale_factors, header_metadatas=None, origo_ns=None, origo_es=None):
     """
     Convert parsed SOSI data to a GeoDataFrame, handling multiple input files.
 
@@ -529,8 +545,8 @@ def _sosi_to_geodataframe(sosi_data_list, all_attributes_list, scale_factors, he
     overall_min_n, overall_min_e = float('inf'), float('inf')
     overall_max_n, overall_max_e = float('-inf'), float('-inf')
     
-    for sosi_data, all_attributes, scale_factor, header_metadata in zip(
-        sosi_data_list, all_attributes_list, scale_factors, header_metadatas
+    for sosi_data, all_attributes, scale_factor, header_metadata, origo_n, origo_e in zip(
+        sosi_data_list, all_attributes_list, scale_factors, header_metadatas, origo_ns, origo_es
     ):
         geometries = sosi_data['geometry']
         attributes = sosi_data['attributes']
@@ -543,7 +559,7 @@ def _sosi_to_geodataframe(sosi_data_list, all_attributes_list, scale_factors, he
             attributes = attributes[:min_length]
 
         # Apply ...ENHET scale factor
-        scaled_geometries = _scale_geometries(geometries, scale_factor)
+        scaled_geometries = _scale_geometries(geometries, scale_factor, origo_n, origo_e)
 
         # Build DataFrame from attributes
         df = pd.DataFrame(attributes)
@@ -562,6 +578,9 @@ def _sosi_to_geodataframe(sosi_data_list, all_attributes_list, scale_factors, he
         epsg_list.append(epsg)
         if epsg:
             gdf.set_crs(epsg, inplace=True)
+
+        print('================== epsg ==================')
+        print(epsg)
 
         # Track original position for round-tripping
         gdf['original_id'] = range(len(gdf))
@@ -585,7 +604,7 @@ def _sosi_to_geodataframe(sosi_data_list, all_attributes_list, scale_factors, he
     return combined_gdf, (overall_min_n, overall_min_e, overall_max_n, overall_max_e)
 
 
-def _scale_geometries(geometries, scale_factor=1.0):
+def _scale_geometries(geometries, scale_factor=1.0, origo_n=None, origo_e=None):
     """
     Scale geometries by the provided factor.
 
@@ -601,7 +620,7 @@ def _scale_geometries(geometries, scale_factor=1.0):
     for geom in geometries:
         # Scale the geometry
         if scale_factor != 1.0:
-            geom = shapely.affinity.scale(geom, xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
+            geom = shapely.affinity.scale(geom, xfact=scale_factor, yfact=scale_factor, origin=(origo_e, origo_n))
         scaled_geometries.append(geom)
     
     return scaled_geometries
