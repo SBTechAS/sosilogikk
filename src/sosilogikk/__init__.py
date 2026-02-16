@@ -606,21 +606,39 @@ def _sosi_to_geodataframe(sosi_data_list, all_attributes_list, scale_factors, he
 
 def _scale_geometries(geometries, scale_factor=1.0, origo_n=None, origo_e=None):
     """
-    Scale geometries by the provided factor.
+    Scale geometries by the provided factor and apply ORIGO offset.
 
     Args:
         geometries (list of shapely.geometry): Geometries to scale.
-        scale_factor (float): Factor to apply.
+        scale_factor (float): Factor to apply (from ...ENHET).
+        origo_n (float): Northing offset from ...ORIGO-NØ.
+        origo_e (float): Easting offset from ...ORIGO-NØ.
 
     Returns:
-        list of shapely.geometry: Scaled geometries.
+        list of shapely.geometry: Transformed geometries.
     """
     scaled_geometries = []
     
     for geom in geometries:
-        # Scale the geometry
+        # SOSI semantics:
+        # 1) apply ...ENHET scale to coordinate values
+        # 2) add ...ORIGO-NØ as translation offset
         if scale_factor != 1.0:
-            geom = shapely.affinity.scale(geom, xfact=scale_factor, yfact=scale_factor, origin=(origo_e, origo_n))
+            geom = shapely.affinity.scale(
+                geom,
+                xfact=scale_factor,
+                yfact=scale_factor,
+                zfact=scale_factor,
+                origin=(0, 0, 0),
+            )
+
+        if origo_n is not None or origo_e is not None:
+            geom = shapely.affinity.translate(
+                geom,
+                xoff=origo_e or 0.0,
+                yoff=origo_n or 0.0,
+                zoff=0.0,
+            )
         scaled_geometries.append(geom)
     
     return scaled_geometries
