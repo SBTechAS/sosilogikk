@@ -8,6 +8,8 @@
 
 sosilogikk is a small utility to read Norwegian SOSI vector files (FKB 5.x) into GeoPandas, and write them back out. It handles the SOSI header, encoding, ENHET scaling, KOORDSYS→EPSG mapping, and assembles geometries (points, curves, polygons).
 
+The reader supports `!` comments on their own lines or after values. Exclamation marks inside single- or double-quoted values are preserved.
+
 ## Install
 
 ```bash

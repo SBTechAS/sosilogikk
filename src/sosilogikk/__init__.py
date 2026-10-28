@@ -146,6 +146,20 @@ def write_sosi(gdf, output_filepath, metadata=None, use_index=True):
 # INTERNAL FUNCTIONS
 # ============================================================================
 
+def _strip_sosi_comment(line):
+    """Remove a SOSI comment, preserving exclamation marks in quoted values."""
+    quote = None
+    for index, char in enumerate(line):
+        if quote is not None:
+            if char == quote:
+                quote = None
+        elif char == '!':
+            return line[:index]
+        elif char in ('"', "'") and (index == 0 or line[index - 1].isspace()):
+            quote = char
+    return line
+
+
 def _read_sosi_file(filepath):
     """
     Read a single SOSI file and return geometry, attributes, ...ENHET value, and an index per object.
@@ -214,12 +228,13 @@ def _read_sosi_file(filepath):
         # First try to read the header with UTF-8 to find TEGNSETT
         with open(filepath, 'r', encoding='utf-8-sig') as file:
             for line in file:
-                if line.strip().startswith('..TEGNSETT'):
-                    specified_encoding = line.strip().split()[-1]
+                stripped_line = _strip_sosi_comment(line).strip()
+                if stripped_line.startswith('..TEGNSETT'):
+                    specified_encoding = stripped_line.split()[-1]
                     file_encoding = encoding_map.get(specified_encoding, 'utf-8-sig')
                     logger.info(f"SOSILOGIKK: Found character encoding: {specified_encoding}, using: {file_encoding}")
                     break
-                if line.strip().startswith('.KURVE') or line.strip().startswith('.PUNKT'):
+                if stripped_line.startswith(('.KURVE', '.PUNKT')):
                     # If we hit geometry without finding TEGNSETT, stop looking
                     break
     except UnicodeDecodeError:
@@ -227,12 +242,13 @@ def _read_sosi_file(filepath):
         try:
             with open(filepath, 'r', encoding='iso-8859-1') as file:
                 for line in file:
-                    if line.strip().startswith('..TEGNSETT'):
-                        specified_encoding = line.strip().split()[-1]
+                    stripped_line = _strip_sosi_comment(line).strip()
+                    if stripped_line.startswith('..TEGNSETT'):
+                        specified_encoding = stripped_line.split()[-1]
                         file_encoding = encoding_map.get(specified_encoding, 'iso-8859-1')
                         logger.info(f"SOSILOGIKK: Found character encoding: {specified_encoding}, using: {file_encoding}")
                         break
-                    if line.strip().startswith('.KURVE') or line.strip().startswith('.PUNKT'):
+                    if stripped_line.startswith(('.KURVE', '.PUNKT')):
                         break
         except UnicodeDecodeError:
             logger.warning("SOSILOGIKK: Could not read TEGNSETT, defaulting to ISO-8859-1")
@@ -245,10 +261,10 @@ def _read_sosi_file(filepath):
             #logger.debug("Starting to read file...")
             
             for line_number, line in enumerate(file, 1):
-                stripped_line = line.strip()
+                stripped_line = _strip_sosi_comment(line).strip()
 
-                # Skip comment lines
-                if stripped_line.startswith('!'):
+                # Skip comments and blank lines, including inside coordinate lists.
+                if not stripped_line:
                     continue
 
                 # Start header section
