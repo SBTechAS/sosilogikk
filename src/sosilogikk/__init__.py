@@ -280,7 +280,7 @@ def _read_sosi_file(filepath):
                     # Continue with geometric object processing
                     if capturing:
                         try:
-                            if geom_type == '.KURVE' and coordinates:
+                            if geom_type in ('.KURVE', '.LINJE') and coordinates:
                                 current_attributes.setdefault('OBJTYPE', 'Unknown')
                                 all_attributes.add('OBJTYPE')
                             if coordinates and current_attributes:
@@ -424,13 +424,13 @@ def _read_sosi_file(filepath):
                             flate_refs.append(stripped_line)
 
         # Save the last object if there is one
-        if capturing and geom_type == '.KURVE' and coordinates:
+        if capturing and geom_type in ('.KURVE', '.LINJE') and coordinates:
             current_attributes.setdefault('OBJTYPE', 'Unknown')
             all_attributes.add('OBJTYPE')
         if capturing and coordinates and current_attributes:
             try:
                 uniform_coordinates = _convert_to_2d_if_mixed(coordinates, coordinate_dim)
-                if geom_type == '.KURVE':
+                if geom_type in ('.KURVE', '.LINJE'):
                     parsed_data['geometry'].append(LineString(uniform_coordinates))
                 elif geom_type == '.PUNKT' and len(uniform_coordinates) == 1:
                     parsed_data['geometry'].append(Point(uniform_coordinates[0]))
