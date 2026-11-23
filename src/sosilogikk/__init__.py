@@ -520,6 +520,7 @@ def _koordsys_to_epsg(koordsys):
     - 22 -> EPSG:25832 (ETRS89 / UTM 32N)
     - 23 -> EPSG:25833 (ETRS89 / UTM 33N)
     - 25 -> EPSG:25835 (ETRS89 / UTM 35N)
+    - 208 -> EPSG:5108 (ETRS89 / NTM zone 8)
     """
     mapping = {
         "22": 25832,
@@ -528,6 +529,8 @@ def _koordsys_to_epsg(koordsys):
         22: 25832,
         23: 25833,
         25: 25835,
+        "208": 5108,
+        208: 5108,
         "210": 5110,
     }
     return mapping.get(koordsys)

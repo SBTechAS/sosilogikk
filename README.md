@@ -32,3 +32,5 @@ gdf.to_file("sample/roads.geojson", driver="GeoJSON")
 ```
 
 You’ll get a CRS-aware GeoDataFrame: KOORDSYS 22/23/25 map to EPSG 25832/25833/25835, ENHET scales coordinates, and mixed 2D/3D geometries are flattened to 2D.
+
+KOORDSYS 208 is supported as EPSG:5108 (EUREF89 / NTM zone 8), alongside KOORDSYS 210 as EPSG:5110 (NTM zone 10).
