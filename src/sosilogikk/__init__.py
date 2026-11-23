@@ -280,6 +280,9 @@ def _read_sosi_file(filepath):
                     # Continue with geometric object processing
                     if capturing:
                         try:
+                            if geom_type == '.KURVE' and coordinates:
+                                current_attributes.setdefault('OBJTYPE', 'Unknown')
+                                all_attributes.add('OBJTYPE')
                             if coordinates and current_attributes:
                                 uniform_coordinates = _convert_to_2d_if_mixed(coordinates, coordinate_dim)
                                 if stripped_line.startswith(('.KURVE', '.PUNKT', '.FLATE')):
@@ -296,6 +299,11 @@ def _read_sosi_file(filepath):
                                             raise ValueError(f"SOSILOGIKK: OBJTYPE missing in KURVE at line {line_number} and not marked as deleted with ..ENDRET H.")
 
                                     if kurve_id:
+                                        # Potential bug: kurve_id comes from OBJTYPE, so curves sharing
+                                        # a type (e.g. Rekkverk) overwrite this lookup entry. Standalone
+                                        # LineStrings are appended independently below and are unaffected,
+                                        # but FLATE boundary resolution may need the .KURVE identifier
+                                        # instead, with matching reference handling.
                                         kurve_coordinates[kurve_id] = uniform_coordinates
 
                                     parsed_data['geometry'].append(LineString(uniform_coordinates))
@@ -416,6 +424,9 @@ def _read_sosi_file(filepath):
                             flate_refs.append(stripped_line)
 
         # Save the last object if there is one
+        if capturing and geom_type == '.KURVE' and coordinates:
+            current_attributes.setdefault('OBJTYPE', 'Unknown')
+            all_attributes.add('OBJTYPE')
         if capturing and coordinates and current_attributes:
             try:
                 uniform_coordinates = _convert_to_2d_if_mixed(coordinates, coordinate_dim)
